@@ -123,7 +123,7 @@ class DataTransformer {
    */
   vector<int> InferBlobShape(const cv::Mat& cv_img);
 
- protected:
+ //protected:
    /**
    * @brief Generates a random integer from Uniform({0, 1, ..., n-1}).
    *
