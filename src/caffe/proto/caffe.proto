@@ -40,6 +40,47 @@ message Datum {
   optional bool encoded = 7 [default = false];
 }
 
+message CarBoundingBox {
+  optional int32 xmin = 1;
+  optional int32 ymin = 2;
+  optional int32 xmax = 3;
+  optional int32 ymax = 4;
+  optional float depth = 5;
+  optional float velocity_x = 6;
+  optional float velocity_y = 7;
+  optional float velocity_z = 8;
+  optional float rel_speed = 9;
+  optional int32 img_width = 10;
+  optional int32 img_height = 11;
+}
+
+message DrivingData {
+  // Image datum for the car.
+  optional Datum car_image_datum = 1;
+  // Image location for the car image.
+  optional string car_img_source = 2;
+  // List of bounding boxes.
+  repeated CarBoundingBox car_boxes = 3;
+  // Lane video path.
+  optional string lane_video_source = 4;
+  // Lane frame number.
+  optional int32 lane_framenum = 5;
+  // Lane perspective id.
+  optional int32 lane_perspective_id = 6;
+  // Image width after cropping.
+  optional int32 car_cropped_width = 7 [default = 640];
+  // Image height after cropping.
+  optional int32 car_cropped_height = 8 [default = 480];
+  // Car label width before tiling.
+  optional int32 car_label_width = 9 [default = 20];
+  // Car label height before tiling.
+  optional int32 car_label_height = 10 [default = 15];
+  // Tiling dimensions.
+  optional int32 car_label_resolution = 11 [default = 4];
+  // Shrink factor for the car prediction mask.
+  optional float car_shrink_factor = 12 [default = 0.5];
+}
+
 message FillerParameter {
   // The filler type.
   optional string type = 1 [default = 'constant'];
@@ -938,6 +979,15 @@ message WindowDataParameter {
   optional bool cache_images = 12 [default = false];
   // append root_folder to locate images
   optional string root_folder = 13 [default = ""];
+}
+
+// Message that stores parameters for transforming a C x H x W blob into a
+// C/t^2 x H*t x W*t blob where t is the tile dimension, and each pixel in
+// the input is turned into a txt grid from the channels in row major order.
+message TilingParameter {
+  // Dimension of each tile. The number of input channels must be a multiple
+  // of the square of this number.
+  optional int32 tile_dim = 1;
 }
 
 message SPPParameter {
