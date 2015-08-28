@@ -16,7 +16,7 @@ using std::max;
 template <typename Dtype>
 void TilingLayer<Dtype>::LayerSetUp(
     const vector<Blob<Dtype>*>& bottom,
-    vector<Blob<Dtype>*>* top) {
+    const vector<Blob<Dtype>*>& top) {
   TilingParameter tiling_param = this->layer_param_.tiling_param();
   tile_dim_ = tiling_param.tile_dim();
   tile_dim_sq_ = tile_dim_ * tile_dim_;
@@ -27,8 +27,8 @@ void TilingLayer<Dtype>::LayerSetUp(
 template <typename Dtype>
 void TilingLayer<Dtype>::Reshape(
     const vector<Blob<Dtype>*>& bottom,
-    vector<Blob<Dtype>*>* top) {
-  CHECK_EQ(top->size(), 1);
+    const vector<Blob<Dtype>*>& top) {
+  CHECK_EQ(top.size(), 1);
   input_channels_ = bottom[0]->channels();
   input_height_ = bottom[0]->height();
   input_width_ = bottom[0]->width();
@@ -40,15 +40,15 @@ void TilingLayer<Dtype>::Reshape(
   CHECK_EQ(0, input_channels_ % tile_dim_sq_)
       << "The number of input channels for tiling layer must be multiples "
       << "of the tile_dim.";
-  (*top)[0]->Reshape(bottom[0]->num(), input_channels_ / tile_dim_sq_,
+  top[0]->Reshape(bottom[0]->num(), input_channels_ / tile_dim_sq_,
       input_height_ * tile_dim_, input_width_ * tile_dim_);
 }
 
 template <typename Dtype>
 void TilingLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
-      vector<Blob<Dtype>*>* top) {
+      const vector<Blob<Dtype>*>& top) {
   const Dtype* bottom_data = bottom[0]->cpu_data();
-  Dtype* top_data = (*top)[0]->mutable_cpu_data();
+  Dtype* top_data = top[0]->mutable_cpu_data();
   for (int n = 0; n < bottom[0]->num(); ++n) {
     for (int c = 0; c < output_channels_; ++c) {
       for (int iy = 0, oy = 0; iy < input_height_; ++iy, oy += tile_dim_) {
@@ -70,14 +70,14 @@ void TilingLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 
 template <typename Dtype>
 void TilingLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
-      const vector<bool>& propagate_down, vector<Blob<Dtype>*>* bottom) {
+      const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
   if (!propagate_down[0]) {
     return;
   }
   const Dtype* top_diff = top[0]->cpu_diff();
-  Dtype* bottom_diff = (*bottom)[0]->mutable_cpu_diff();
+  Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
 
-  for (int n = 0; n < (*bottom)[0]->num(); ++n) {
+  for (int n = 0; n < bottom[0]->num(); ++n) {
     for (int c = 0; c < output_channels_; ++c) {
       for (int iy = 0, oy = 0; iy < input_height_; ++iy, oy += tile_dim_) {
         for (int ix = 0, ox = 0; ix < input_width_; ++ix, ox += tile_dim_) {
@@ -96,12 +96,27 @@ void TilingLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   }
 }
 
+// TODO(willsong): Implement GPU version of tiling.
+template <typename Dtype>
+void TilingLayer<Dtype>::Forward_gpu(
+    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
+  Forward_cpu(bottom, top);
+}
+
+template <typename Dtype>
+void TilingLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
+    const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
+  Backward_cpu(top, propagate_down, bottom);
+}
 
 #ifdef CPU_ONLY
 STUB_GPU(TilingLayer);
 #endif
 
+//INSTANTIATE_LAYER_GPU_FUNCS(TilingLayer);
+
 INSTANTIATE_CLASS(TilingLayer);
+REGISTER_LAYER_CLASS(Tiling);
 
 
 }  // namespace caffe

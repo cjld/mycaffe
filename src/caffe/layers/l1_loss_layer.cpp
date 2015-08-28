@@ -8,8 +8,8 @@
 namespace caffe {
 
 template <typename Dtype>
-void L1LossLayer<Dtype>::Reshape(
-  const vector<Blob<Dtype>*>& bottom, vector<Blob<Dtype>*>* top) {
+void L1LossLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
+                                 const vector<Blob<Dtype> *> &top) {
   LossLayer<Dtype>::Reshape(bottom, top);
   CHECK_EQ(bottom[0]->channels(), bottom[1]->channels());
   CHECK_EQ(bottom[0]->height(), bottom[1]->height());
@@ -22,7 +22,7 @@ void L1LossLayer<Dtype>::Reshape(
 
 template <typename Dtype>
 void L1LossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
-    vector<Blob<Dtype>*>* top) {
+    const vector<Blob<Dtype> *> &top) {
   int count = bottom[0]->count();
   caffe_sub(
       count,
@@ -32,22 +32,55 @@ void L1LossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   caffe_cpu_sign(count, diff_.cpu_data(), sign_.mutable_cpu_data());
   Dtype abs_sum = caffe_cpu_asum(count, diff_.cpu_data());
   Dtype loss = abs_sum / bottom[0]->num();
-  (*top)[0]->mutable_cpu_data()[0] = loss;
+  top[0]->mutable_cpu_data()[0] = loss;
 }
 
 template <typename Dtype>
 void L1LossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
-    const vector<bool>& propagate_down, vector<Blob<Dtype>*>* bottom) {
+    const vector<bool>& propagate_down, const vector<Blob<Dtype> *> &bottom) {
   for (int i = 0; i < 2; ++i) {
     if (propagate_down[i]) {
       const Dtype sign = (i == 0) ? 1 : -1;
-      const Dtype alpha = sign * top[0]->cpu_diff()[0] / (*bottom)[i]->num();
+      const Dtype alpha = sign * top[0]->cpu_diff()[0] / bottom[i]->num();
       caffe_cpu_axpby(
-          (*bottom)[i]->count(),              // count
+          bottom[i]->count(),              // count
           alpha,                              // alpha
           sign_.cpu_data(),                   // a
           Dtype(0),                           // beta
-          (*bottom)[i]->mutable_cpu_diff());  // b
+          bottom[i]->mutable_cpu_diff());  // b
+    }
+  }
+}
+
+template <typename Dtype>
+void L1LossLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
+    const vector<Blob<Dtype> *> &top) {
+  int count = bottom[0]->count();
+  caffe_gpu_sub(
+      count,
+      bottom[0]->gpu_data(),
+      bottom[1]->gpu_data(),
+      diff_.mutable_gpu_data());
+  Dtype abs_sum;
+  caffe_gpu_asum(count, diff_.gpu_data(), &abs_sum);
+  caffe_gpu_sign(count, diff_.gpu_data(), sign_.mutable_gpu_data());
+  Dtype loss = abs_sum / bottom[0]->num();
+  top[0]->mutable_cpu_data()[0] = loss;
+}
+
+template <typename Dtype>
+void L1LossLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
+    const vector<bool>& propagate_down, const vector<Blob<Dtype> *> &bottom) {
+  for (int i = 0; i < 2; ++i) {
+    if (propagate_down[i]) {
+      const Dtype sign = (i == 0) ? 1 : -1;
+      const Dtype alpha = sign * top[0]->cpu_diff()[0] / bottom[i]->num();
+      caffe_gpu_axpby(
+          bottom[i]->count(),              // count
+          alpha,                              // alpha
+          sign_.gpu_data(),                   // a
+          Dtype(0),                           // beta
+          bottom[i]->mutable_gpu_diff());  // b
     }
   }
 }
@@ -57,5 +90,6 @@ STUB_GPU(L1LossLayer);
 #endif
 
 INSTANTIATE_CLASS(L1LossLayer);
+REGISTER_LAYER_CLASS(L1Loss);
 
 }  // namespace caffe
