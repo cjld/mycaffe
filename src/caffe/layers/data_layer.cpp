@@ -30,7 +30,8 @@ void DataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   const int batch_size = this->layer_param_.data_param().batch_size();
   // Read a data point, and use it to initialize the top blob.
-  Datum& datum = *(reader_.full().peek());
+  Datum datum;
+  datum.ParseFromString(*(reader_.full().peek()));
 
   // Use data_transformer to infer the expected blob shape from datum.
   vector<int> top_shape = this->data_transformer_->InferBlobShape(datum);
@@ -68,7 +69,9 @@ void DataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   // Reshape according to the first datum of each batch
   // on single input batches allows for inputs of varying dimension.
   const int batch_size = this->layer_param_.data_param().batch_size();
-  Datum& datum = *(reader_.full().peek());
+  Datum datum;
+  string *raw_data;
+  datum.ParseFromString(*(raw_data = reader_.full().pop("Waiting for data")));
   // Use data_transformer to infer the expected blob shape from datum.
   vector<int> top_shape = this->data_transformer_->InferBlobShape(datum);
   this->transformed_data_.Reshape(top_shape);
@@ -85,7 +88,8 @@ void DataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   for (int item_id = 0; item_id < batch_size; ++item_id) {
     timer.Start();
     // get a datum
-    Datum& datum = *(reader_.full().pop("Waiting for data"));
+    if (item_id != 0)
+        datum.ParseFromString(*(raw_data = reader_.full().pop("Waiting for data")));
     read_time += timer.MicroSeconds();
     timer.Start();
     // Apply data transformations (mirror, scale, crop...)
@@ -98,7 +102,7 @@ void DataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     }
     trans_time += timer.MicroSeconds();
 
-    reader_.free().push(const_cast<Datum*>(&datum));
+    reader_.free().push(const_cast<string*>(raw_data));
   }
   timer.Stop();
   batch_timer.Stop();

@@ -42,19 +42,19 @@ DataReader::~DataReader() {
 //
 
 DataReader::QueuePair::QueuePair(int size) {
-  // Initialize the free queue with requested number of datums
+  // Initialize the free queue with requested number of strings
   for (int i = 0; i < size; ++i) {
-    free_.push(new Datum());
+    free_.push(new string());
   }
 }
 
 DataReader::QueuePair::~QueuePair() {
-  Datum* datum;
-  while (free_.try_pop(&datum)) {
-    delete datum;
+  string* s;
+  while (free_.try_pop(&s)) {
+    delete s;
   }
-  while (full_.try_pop(&datum)) {
-    delete datum;
+  while (full_.try_pop(&s)) {
+    delete s;
   }
 }
 
@@ -103,10 +103,10 @@ void DataReader::Body::InternalThreadEntry() {
 }
 
 void DataReader::Body::read_one(db::Cursor* cursor, QueuePair* qp) {
-  Datum* datum = qp->free_.pop();
+  string* s = qp->free_.pop();
   // TODO deserialize in-place instead of copy?
-  datum->ParseFromString(cursor->value());
-  qp->full_.push(datum);
+  *s = (cursor->value());
+  qp->full_.push(s);
 
   // go to the next iter
   cursor->Next();
