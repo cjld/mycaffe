@@ -313,6 +313,6 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
 }
 
 INSTANTIATE_CLASS(DriveDataLayer);
-REGISTER_LAYER_CLASS(Data);
+REGISTER_LAYER_CLASS(DriveData);
 
 }  // namespace caffe
