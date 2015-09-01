@@ -27,6 +27,7 @@ DriveDataLayer<Dtype>::DriveDataLayer(const LayerParameter& param)
 template <typename Dtype>
 void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
+  srand(0);
   const int batch_size = this->layer_param_.data_param().batch_size();
   // Read a data point, and use it to initialize the top blob.
   DrivingData data;
