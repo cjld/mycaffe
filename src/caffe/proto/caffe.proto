@@ -425,6 +425,7 @@ message LayerParameter {
   optional ThresholdParameter threshold_param = 128;
   optional WindowDataParameter window_data_param = 129;
   optional TilingParameter tiling_param = 500;
+  optional DriveDataParameter drive_data_param = 501;
 }
 
 // Message that stores parameters used to apply transformation
@@ -989,6 +990,16 @@ message TilingParameter {
   // Dimension of each tile. The number of input channels must be a multiple
   // of the square of this number.
   optional int32 tile_dim = 1;
+}
+
+message DriveDataParameter {
+  // shrink the area of prob
+  optional float shrink_prob_factor = 1 [default = 1];
+  // when the overlap area is smaller than this,
+  // treat this pattern unrecognize
+  optional float unrecognize_factor = 2 [default = 0.9];
+  // crop how many image from one image
+  optional uint32 crop_num = 3 [default = 4];
 }
 
 message SPPParameter {

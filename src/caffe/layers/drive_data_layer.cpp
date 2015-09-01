@@ -65,14 +65,16 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
 int Rand() {return rand();}
 
 bool ReadBoundingBoxLabelToDatum(
-    const DrivingData& data, Datum* datum, const int h_off, const int w_off) {
+    const DrivingData& data, Datum* datum, const int h_off, const int w_off,
+    const DriveDataParameter& param) {
   bool have_obj = false;
   const int grid_dim = data.car_label_resolution();
   const int width = data.car_label_width();
   const int height = data.car_label_height();
   const int full_label_width = width * grid_dim;
   const int full_label_height = height * grid_dim;
-  const float half_shrink_factor = data.car_shrink_factor() / 2;
+  const float half_shrink_factor = (1-param.shrink_prob_factor()) / 2;
+  const float unrecog_factor = param.unrecognize_factor();
   const float scaling = static_cast<float>(full_label_width) \
     / data.car_cropped_width();
 
@@ -91,12 +93,17 @@ bool ReadBoundingBoxLabelToDatum(
     int ymin = data.car_boxes(i).ymin();
     int xmax = data.car_boxes(i).xmax();
     int ymax = data.car_boxes(i).ymax();
+    float ow = xmax - xmin;
+    float oh = ymax - ymin;
     xmin = std::min(std::max(0, xmin - w_off), data.car_cropped_width());
     xmax = std::min(std::max(0, xmax - w_off), data.car_cropped_width());
     ymin = std::min(std::max(0, ymin - h_off), data.car_cropped_height());
     ymax = std::min(std::max(0, ymax - h_off), data.car_cropped_height());
     float w = xmax - xmin;
     float h = ymax - ymin;
+    // drop boxes that unrecognize
+    if (w < ow*unrecog_factor || h < oh*unrecog_factor)
+        continue;
     if (w < 4 || h < 4) {
       // drop boxes that are too small
       continue;
@@ -243,10 +250,13 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     Dtype *top_label = batch->label_.mutable_cpu_data();
     top_labels.push_back(top_label);
   }
+
+  const int crop_num = this->layer_param().drive_data_param().crop_num();
+
   for (int item_id = 0; item_id < batch_size; ++item_id) {
     timer.Start();
     // get a datum
-    if (item_id != 0)
+    if (item_id != 0 && item_id%crop_num == 0)
         data.ParseFromString(*(raw_data = this->reader_.full().pop("Waiting for data")));
     read_time += timer.MicroSeconds();
     timer.Start();
@@ -265,7 +275,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     if (this->output_labels_) {
       // Call appropriate functions for genearting each label
       if (!ReadBoundingBoxLabelToDatum(data, &label_datums[0],
-                                  h_off, w_off))
+            h_off, w_off, this->layer_param().drive_data_param()))
           goto try_again;
     }
 
