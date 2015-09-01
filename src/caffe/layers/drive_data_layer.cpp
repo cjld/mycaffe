@@ -233,6 +233,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   batch->data_.Reshape(top_shape);
 
   Dtype* top_data = batch->data_.mutable_cpu_data();
+  const Dtype* data_mean = this->data_transformer_->data_mean_.cpu_data();
   vector<Dtype*> top_labels;
 
   if (this->output_labels_) {
@@ -277,8 +278,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
             static_cast<uint8_t>(img_datum_data[data_index]);
           Dtype datum_element = static_cast<Dtype>(datum_element_ui8);
 
-          top_data[top_index] = datum_element -
-                  this->data_transformer_->mean_values_[data_index];
+          top_data[top_index] = datum_element - data_mean[data_index];
         }
       }
     }
