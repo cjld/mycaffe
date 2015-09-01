@@ -34,7 +34,8 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   const Datum &datum = data.car_image_datum();
 
   vector<int> top_shape(4,0);
-  int shape[4] = {batch_size, datum.channels(), datum.height(), datum.height()};
+  int shape[4] = {batch_size, datum.channels(),
+                  data.car_cropped_height(), data.car_cropped_width()};
   memcpy(&top_shape[0], shape, sizeof(shape));
 
   top[0]->Reshape(top_shape);
@@ -225,7 +226,8 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   const Datum& datum = data.car_image_datum();
 
   vector<int> top_shape(4,0);
-  int shape[4] = {batch_size, datum.channels(), datum.height(), datum.height()};
+  int shape[4] = {batch_size, datum.channels(),
+                  data.car_cropped_height(), data.car_cropped_width()};
   memcpy(&top_shape[0], shape, sizeof(shape));
 
   // Reshape batch according to the batch_size.
