@@ -30,7 +30,9 @@ TYPED_TEST(LayerFactoryTest, TestCreateLayer) {
     if (iter->first == "Python") { continue; }
     LayerParameter layer_param;
     // Data layers expect a DB
-    if (iter->first == "Data") {
+    // layer name ends with 'Data' should add this param
+    if (iter->first.size() >= 4 &&
+        iter->first.substr(iter->first.size()-4) == "Data") {
       string tmp;
       MakeTempDir(&tmp);
       boost::scoped_ptr<db::DB> db(db::GetDB(DataParameter_DB_LEVELDB));
