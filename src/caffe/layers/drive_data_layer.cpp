@@ -52,7 +52,7 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
         data.car_label_height() * data.car_label_resolution(),
         data.car_label_width() * data.car_label_resolution()
     };
-    memcpy(&top_shape[0], shape, sizeof(shape));
+    memcpy(&label_shape[0], shape, sizeof(shape));
     top[1]->Reshape(label_shape);
     for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
       this->prefetch_[i].label_.Reshape(label_shape);
