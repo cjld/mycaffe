@@ -264,6 +264,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
 
     const Datum& img_datum = data.car_image_datum();
     const string& img_datum_data = img_datum.data();
+    bool can_pass = rand_float() > this->layer_param().drive_data_param().random_crop_ratio();
     try_again:
     int h_off = img_datum.height() == data.car_cropped_height() ?
         0 : Rand() % (img_datum.height() - data.car_cropped_height());
@@ -275,7 +276,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
       // Call appropriate functions for genearting each label
       if (!ReadBoundingBoxLabelToDatum(data, &label_datums[0],
             h_off, w_off, this->layer_param().drive_data_param()))
-          if (rand_float() > this->layer_param().drive_data_param().random_crop_ratio())
+          if (can_pass)
             goto try_again;
     }
 
