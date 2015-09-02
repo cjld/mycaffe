@@ -316,7 +316,8 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     }
     trans_time += timer.MicroSeconds();
 
-    this->reader_.free().push(const_cast<string*>(raw_data));
+    if (item_id%crop_num == 0)
+        this->reader_.free().push(const_cast<string*>(raw_data));
   }
   timer.Stop();
   batch_timer.Stop();
