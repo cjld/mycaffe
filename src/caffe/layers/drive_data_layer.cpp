@@ -152,7 +152,7 @@ bool ReadBoundingBoxLabelToDatum(
     cv::Rect r(gxmin, gymin, gxmax - gxmin + 1, gymax - gymin + 1);
 
     float flabels[num_total_labels] =
-        {1.0, xmin, ymin, xmax, ymax, 1.0 / w, 1.0 / h, 1.0};
+        {1.0f, (float)xmin, (float)ymin, (float)xmax, (float)ymax, 1.0f / w, 1.0f / h, 1.0f};
     for (int j = 0; j < num_total_labels; ++j) {
       cv::Mat roi(*labels[j], r);
       roi = cv::Scalar(flabels[j]);
@@ -260,8 +260,6 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
         data.ParseFromString(*(raw_data = this->reader_.full().pop("Waiting for data")));
     read_time += timer.MicroSeconds();
     timer.Start();
-    // Apply data transformations (mirror, scale, crop...)
-    int offset = batch->data_.offset(item_id);
 
     const Datum& img_datum = data.car_image_datum();
     const string& img_datum_data = img_datum.data();
