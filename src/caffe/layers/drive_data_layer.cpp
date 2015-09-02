@@ -63,6 +63,7 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
 }
 
 int Rand() {return rand();}
+float rand_float() {return rand()*1.0f / RAND_MAX;}
 
 bool ReadBoundingBoxLabelToDatum(
     const DrivingData& data, Datum* datum, const int h_off, const int w_off,
@@ -274,7 +275,8 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
       // Call appropriate functions for genearting each label
       if (!ReadBoundingBoxLabelToDatum(data, &label_datums[0],
             h_off, w_off, this->layer_param().drive_data_param()))
-          goto try_again;
+          if (rand_float() > this->layer_param().drive_data_param().random_crop_ratio())
+            goto try_again;
     }
 
     for (int c = 0; c < img_datum.channels(); ++c) {

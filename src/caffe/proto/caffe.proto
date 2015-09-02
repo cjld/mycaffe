@@ -1000,6 +1000,7 @@ message DriveDataParameter {
   optional float unrecognize_factor = 2 [default = 0.9];
   // crop how many image from one image
   optional uint32 crop_num = 3 [default = 4];
+  optional float random_crop_ratio = 4 [default = 0];
 }
 
 message SPPParameter {
