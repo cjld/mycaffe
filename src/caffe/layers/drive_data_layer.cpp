@@ -1,4 +1,5 @@
 #include <opencv2/core/core.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 
 #include <stdint.h>
 
@@ -78,6 +79,7 @@ bool ReadBoundingBoxLabelToDatum(
   const float unrecog_factor = param.unrecognize_factor();
   const float scaling = static_cast<float>(full_label_width) \
     / data.car_cropped_width();
+  const float resize = param.resize();
 
   // 1 pixel label, 4 bounding box coordinates, 3 normalization labels.
   const int num_total_labels = kNumRegressionMasks;
@@ -90,10 +92,10 @@ bool ReadBoundingBoxLabelToDatum(
   }
 
   for (int i = 0; i < data.car_boxes_size(); ++i) {
-    int xmin = data.car_boxes(i).xmin();
-    int ymin = data.car_boxes(i).ymin();
-    int xmax = data.car_boxes(i).xmax();
-    int ymax = data.car_boxes(i).ymax();
+    int xmin = data.car_boxes(i).xmin()*resize;
+    int ymin = data.car_boxes(i).ymin()*resize;
+    int xmax = data.car_boxes(i).xmax()*resize;
+    int ymax = data.car_boxes(i).ymax()*resize;
     float ow = xmax - xmin;
     float oh = ymax - ymin;
     xmin = std::min(std::max(0, xmin - w_off), data.car_cropped_width());
@@ -244,7 +246,10 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   batch->data_.Reshape(top_shape);
 
   Dtype* top_data = batch->data_.mutable_cpu_data();
-  const Dtype* data_mean = this->data_transformer_->data_mean_.cpu_data();
+  const Dtype* data_mean_c = this->data_transformer_->data_mean_.cpu_data();
+  vector<Dtype> v_mean(data_mean_c, data_mean_c+this->data_transformer_->data_mean_.count());
+  Dtype *data_mean = &v_mean[0];
+
   vector<Dtype*> top_labels;
 
   if (this->output_labels_) {
@@ -263,13 +268,18 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     timer.Start();
 
     const Datum& img_datum = data.car_image_datum();
+
     const string& img_datum_data = img_datum.data();
+    float resize = this->layer_param().drive_data_param().resize();
     bool can_pass = rand_float() > this->layer_param().drive_data_param().random_crop_ratio();
+    int rheight = (int)(img_datum.height() * resize);
+    int rwidth = (int)(img_datum.height() * resize);
+    int cheight = data.car_cropped_height();
+    int cwidth = data.car_cropped_width();
+    int channal = img_datum.channels();
     try_again:
-    int h_off = img_datum.height() == data.car_cropped_height() ?
-        0 : Rand() % (img_datum.height() - data.car_cropped_height());
-    int w_off = img_datum.width() == data.car_cropped_width() ?
-        0 : Rand() % (img_datum.width() - data.car_cropped_width());
+    int h_off = rheight == cheight ? 0 : Rand() % (rheight - cheight);
+    int w_off = rwidth == cwidth ? 0 : Rand() % (rwidth - cwidth);
 
     vector<Datum> label_datums(kNumLabels);
     if (this->output_labels_) {
@@ -280,23 +290,24 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
             goto try_again;
     }
 
-    for (int c = 0; c < img_datum.channels(); ++c) {
-      for (int h = 0; h < data.car_cropped_height(); ++h) {
-        for (int w = 0; w < data.car_cropped_width(); ++w) {
-          int top_index = ((item_id * img_datum.channels() + c) \
-                           * data.car_cropped_height() + h)
-              * data.car_cropped_width() + w;
-          int data_index = (c * img_datum.height() + h + h_off) \
-            * img_datum.width() + w + w_off;
-          uint8_t datum_element_ui8 = \
-            static_cast<uint8_t>(img_datum_data[data_index]);
-          Dtype datum_element = static_cast<Dtype>(datum_element_ui8);
+    cv::Mat_<Dtype> mean_img(cheight, cwidth);
+    Dtype* itop_data = top_data+item_id*channal*cheight*cwidth;
+    float mat[] = { 1.f/resize,0.f,(float)h_off/resize, 0.f,1.f/resize,(float)w_off/resize };
+    cv::Mat_<float> M(2,3, mat);
 
-          top_data[top_index] = datum_element - data_mean[data_index];
-        }
-      }
+    for (int c=0; c<img_datum.channels(); c++) {
+        cv::Mat_<Dtype> crop_img(cheight, cwidth, itop_data+c*cheight*cwidth);
+        cv::Mat_<Dtype> pmean_img(img_datum.height(), img_datum.width(),
+                          data_mean + c*img_datum.height()*img_datum.width());
+        cv::Mat p_img(img_datum.height(), img_datum.width(), CV_8U,
+               ((uint8_t*)&(img_datum_data[0])) + c*img_datum.height()*img_datum.width());
+        p_img.convertTo(p_img, crop_img.type());
+        cv::warpAffine(pmean_img, mean_img, M, mean_img.size(), cv::INTER_CUBIC);
+        cv::warpAffine(p_img, crop_img, M, crop_img.size(), cv::INTER_CUBIC);
+
+        crop_img -= mean_img;
+        crop_img *= this->layer_param().drive_data_param().scale();
     }
-
 
     // Copy label.
     if (this->output_labels_) {
