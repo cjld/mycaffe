@@ -105,7 +105,7 @@ bool ReadBoundingBoxLabelToDatum(
     float w = xmax - xmin;
     float h = ymax - ymin;
     // drop boxes that unrecognize
-    if (w < ow*unrecog_factor || h < oh*unrecog_factor)
+    if (w*h < ow*oh*unrecog_factor)
         continue;
     if (w < 4 || h < 4) {
       // drop boxes that are too small
@@ -292,7 +292,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
 
     cv::Mat_<Dtype> mean_img(cheight, cwidth);
     Dtype* itop_data = top_data+item_id*channal*cheight*cwidth;
-    float mat[] = { 1.f*resize,0.f,(float)-h_off, 0.f,1.f*resize,(float)-w_off };
+    float mat[] = { 1.f*resize,0.f,(float)-w_off, 0.f,1.f*resize,(float)-h_off };
     cv::Mat_<float> M(2,3, mat);
 
     for (int c=0; c<img_datum.channels(); c++) {
