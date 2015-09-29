@@ -96,19 +96,6 @@ void TilingLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   }
 }
 
-// TODO(willsong): Implement GPU version of tiling.
-template <typename Dtype>
-void TilingLayer<Dtype>::Forward_gpu(
-    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
-  Forward_cpu(bottom, top);
-}
-
-template <typename Dtype>
-void TilingLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
-    const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
-  Backward_cpu(top, propagate_down, bottom);
-}
-
 #ifdef CPU_ONLY
 STUB_GPU(TilingLayer);
 #endif

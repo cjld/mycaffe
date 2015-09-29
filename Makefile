@@ -323,7 +323,12 @@ else
 	ifeq ($(LINUX), 1)
 		ifeq ($(BLAS), atlas)
 			# Linux simply has cblas and atlas
-			LIBRARIES += cblas atlas
+			# APTGET := $(shell which apt-get >/dev/null 2>&1; echo $$?)
+			#ifeq ($(APTGET), 1)
+			#	LIBRARIES += satlas
+			#else
+				LIBRARIES += cblas atlas
+			#endif
 		endif
 	else ifeq ($(OSX), 1)
 		# OS X packages atlas as the vecLib framework
