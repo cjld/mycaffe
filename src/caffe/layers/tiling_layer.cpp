@@ -100,7 +100,6 @@ void TilingLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
 STUB_GPU(TilingLayer);
 #endif
 
-//INSTANTIATE_LAYER_GPU_FUNCS(TilingLayer);
 
 INSTANTIATE_CLASS(TilingLayer);
 REGISTER_LAYER_CLASS(Tiling);

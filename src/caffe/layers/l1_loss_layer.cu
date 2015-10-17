@@ -42,4 +42,6 @@ void L1LossLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
   }
 }
 
+INSTANTIATE_LAYER_GPU_FUNCS(L1LossLayer);
+
 }  // namespace caffe
