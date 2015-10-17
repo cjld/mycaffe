@@ -45,13 +45,7 @@ message CarBoundingBox {
   optional int32 ymin = 2;
   optional int32 xmax = 3;
   optional int32 ymax = 4;
-  optional float depth = 5;
-  optional float velocity_x = 6;
-  optional float velocity_y = 7;
-  optional float velocity_z = 8;
-  optional float rel_speed = 9;
-  optional int32 img_width = 10;
-  optional int32 img_height = 11;
+  optional int32 type = 5;
 }
 
 message DrivingData {
@@ -61,24 +55,6 @@ message DrivingData {
   optional string car_img_source = 2;
   // List of bounding boxes.
   repeated CarBoundingBox car_boxes = 3;
-  // Lane video path.
-  optional string lane_video_source = 4;
-  // Lane frame number.
-  optional int32 lane_framenum = 5;
-  // Lane perspective id.
-  optional int32 lane_perspective_id = 6;
-  // Image width after cropping.
-  optional int32 car_cropped_width = 7 [default = 640];
-  // Image height after cropping.
-  optional int32 car_cropped_height = 8 [default = 480];
-  // Car label width before tiling.
-  optional int32 car_label_width = 9 [default = 20];
-  // Car label height before tiling.
-  optional int32 car_label_height = 10 [default = 15];
-  // Tiling dimensions.
-  optional int32 car_label_resolution = 11 [default = 4];
-  // Shrink factor for the car prediction mask.
-  optional float car_shrink_factor = 12 [default = 0.5];
 }
 
 message FillerParameter {
@@ -1003,6 +979,18 @@ message DriveDataParameter {
   optional float random_crop_ratio = 4 [default = 0];
   optional float resize = 5 [default = 1];
   optional float scale = 6 [default = 1];
+  optional uint32 cropped_height = 7 [default = 480];
+  optional uint32 cropped_width = 8 [default = 640];
+
+  // Car label width before tiling.
+  optional int32 tiling_width = 9 [default = 20];
+  // Car label height before tiling.
+  optional int32 tiling_height = 10 [default = 15];
+  // label dimensions.
+  optional int32 label_resolution = 11 [default = 8];
+  optional int32 catalog_resolution = 12 [default = 2];
+  // number of catalog
+  optional int32 catalog_number = 13 [default = 150];
 }
 
 message SPPParameter {
