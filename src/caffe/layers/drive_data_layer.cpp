@@ -30,14 +30,12 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   srand(0);
   const int batch_size = this->layer_param_.data_param().batch_size();
+  DriveDataParameter param = this->layer_param().drive_data_param();
   // Read a data point, and use it to initialize the top blob.
-  DrivingData data;
-  data.ParseFromString(*(this->reader_.full().peek()));
-  const Datum &datum = data.car_image_datum();
 
   vector<int> top_shape(4,0);
-  int shape[4] = {batch_size, datum.channels(),
-                  data.car_cropped_height(), data.car_cropped_width()};
+  int shape[4] = {batch_size, 3,
+                  (int)param.cropped_height(), (int)param.cropped_width()};
   memcpy(&top_shape[0], shape, sizeof(shape));
 
   top[0]->Reshape(top_shape);
@@ -52,8 +50,8 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
     vector<int> label_shape(4,0);
     int shape[4] = {
         batch_size, kNumRegressionMasks,
-        data.car_label_height() * data.car_label_resolution(),
-        data.car_label_width() * data.car_label_resolution()
+        param.tiling_height() * param.label_resolution(),
+        param.tiling_width() * param.label_resolution()
     };
     memcpy(&label_shape[0], shape, sizeof(shape));
     top[1]->Reshape(label_shape);
@@ -70,15 +68,15 @@ bool ReadBoundingBoxLabelToDatum(
     const DrivingData& data, Datum* datum, const int h_off, const int w_off,
     const DriveDataParameter& param) {
   bool have_obj = false;
-  const int grid_dim = data.car_label_resolution();
-  const int width = data.car_label_width();
-  const int height = data.car_label_height();
+  const int grid_dim = param.label_resolution();
+  const int width = param.tiling_width();
+  const int height = param.tiling_height();
   const int full_label_width = width * grid_dim;
   const int full_label_height = height * grid_dim;
   const float half_shrink_factor = (1-param.shrink_prob_factor()) / 2;
   const float unrecog_factor = param.unrecognize_factor();
   const float scaling = static_cast<float>(full_label_width) \
-    / data.car_cropped_width();
+    / param.cropped_width();
   const float resize = param.resize();
 
   // 1 pixel label, 4 bounding box coordinates, 3 normalization labels.
@@ -98,10 +96,10 @@ bool ReadBoundingBoxLabelToDatum(
     int ymax = data.car_boxes(i).ymax()*resize;
     float ow = xmax - xmin;
     float oh = ymax - ymin;
-    xmin = std::min(std::max(0, xmin - w_off), data.car_cropped_width());
-    xmax = std::min(std::max(0, xmax - w_off), data.car_cropped_width());
-    ymin = std::min(std::max(0, ymin - h_off), data.car_cropped_height());
-    ymax = std::min(std::max(0, ymax - h_off), data.car_cropped_height());
+    xmin = std::min<int>(std::max(0, xmin - w_off), param.cropped_width());
+    xmax = std::min<int>(std::max(0, xmax - w_off), param.cropped_width());
+    ymin = std::min<int>(std::max(0, ymin - h_off), param.cropped_height());
+    ymax = std::min<int>(std::max(0, ymax - h_off), param.cropped_height());
     float w = xmax - xmin;
     float h = ymax - ymin;
     // drop boxes that unrecognize
@@ -227,6 +225,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   double trans_time = 0;
   CPUTimer timer;
   CHECK(batch->data_.count());
+  DriveDataParameter param = this->layer_param_.drive_data_param();
 
   // Reshape according to the first datum of each batch
   // on single input batches allows for inputs of varying dimension.
@@ -238,7 +237,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
 
   vector<int> top_shape(4,0);
   int shape[4] = {batch_size, datum.channels(),
-                  data.car_cropped_height(), data.car_cropped_width()};
+                  (int)param.cropped_height(), (int)param.cropped_width()};
   memcpy(&top_shape[0], shape, sizeof(shape));
 
   // Reshape batch according to the batch_size.
@@ -274,8 +273,8 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     bool can_pass = rand_float() > this->layer_param().drive_data_param().random_crop_ratio();
     int rheight = (int)(img_datum.height() * resize);
     int rwidth = (int)(img_datum.height() * resize);
-    int cheight = data.car_cropped_height();
-    int cwidth = data.car_cropped_width();
+    int cheight = param.cropped_height();
+    int cwidth = param.cropped_width();
     int channal = img_datum.channels();
     try_again:
     int h_off = rheight == cheight ? 0 : Rand() % (rheight - cheight);
