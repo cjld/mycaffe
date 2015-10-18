@@ -90,16 +90,16 @@ bool ReadBoundingBoxLabelToDatum(
   }
 
   for (int i = 0; i < data.car_boxes_size(); ++i) {
-    int xmin = data.car_boxes(i).xmin()*resize;
-    int ymin = data.car_boxes(i).ymin()*resize;
-    int xmax = data.car_boxes(i).xmax()*resize;
-    int ymax = data.car_boxes(i).ymax()*resize;
+    float xmin = data.car_boxes(i).xmin()*resize;
+    float ymin = data.car_boxes(i).ymin()*resize;
+    float xmax = data.car_boxes(i).xmax()*resize;
+    float ymax = data.car_boxes(i).ymax()*resize;
     float ow = xmax - xmin;
     float oh = ymax - ymin;
-    xmin = std::min<int>(std::max(0, xmin - w_off), param.cropped_width());
-    xmax = std::min<int>(std::max(0, xmax - w_off), param.cropped_width());
-    ymin = std::min<int>(std::max(0, ymin - h_off), param.cropped_height());
-    ymax = std::min<int>(std::max(0, ymax - h_off), param.cropped_height());
+    xmin = std::min<float>(std::max<float>(0, xmin - w_off), param.cropped_width());
+    xmax = std::min<float>(std::max<float>(0, xmax - w_off), param.cropped_width());
+    ymin = std::min<float>(std::max<float>(0, ymin - h_off), param.cropped_height());
+    ymax = std::min<float>(std::max<float>(0, ymax - h_off), param.cropped_height());
     float w = xmax - xmin;
     float h = ymax - ymin;
     // drop boxes that unrecognize

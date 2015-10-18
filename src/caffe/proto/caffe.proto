@@ -41,10 +41,10 @@ message Datum {
 }
 
 message CarBoundingBox {
-  optional int32 xmin = 1;
-  optional int32 ymin = 2;
-  optional int32 xmax = 3;
-  optional int32 ymax = 4;
+  optional float xmin = 1;
+  optional float ymin = 2;
+  optional float xmax = 3;
+  optional float ymax = 4;
   optional int32 type = 5;
 }
 

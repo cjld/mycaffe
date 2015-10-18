@@ -45,7 +45,6 @@ DEFINE_bool(gray, false,
 DEFINE_bool(shuffle, true,
     "Randomly shuffle the order of images and their labels");
 DEFINE_bool(use_rgb, false, "use RGB channels");
-DEFINE_int32(num_info_per_box, 4, "number of fields per box.");
 DEFINE_int32(resize_width, 640 + 32, "Width images are resized to");
 DEFINE_int32(resize_height, 480 + 32, "Height images are resized to");
 
@@ -69,17 +68,23 @@ int main(int argc, char** argv) {
 
   bool is_color = !FLAGS_gray;
   std::ifstream infile(argv[2]);
-  std::vector<std::pair<string, vector<int> > > lines;
+  std::vector<std::pair<string, vector<CarBoundingBox> > > lines;
   string filename;
-  int num_labels, tmp;
+  int num_labels;
   while (infile >> filename >> num_labels) {
-    vector<int> bbs;
-    int num_numbers = num_labels * FLAGS_num_info_per_box;
-    for (int i = 0; i < num_numbers; i++) {
-      infile >> tmp;
-      bbs.push_back(tmp);
-    }
-    lines.push_back(std::make_pair(filename, bbs));
+      vector<CarBoundingBox> boxes;
+      for (int i=0; i<num_labels; i++) {
+          float tmp;
+          CarBoundingBox box;
+          infile >> tmp; box.set_xmin(tmp);
+          infile >> tmp; box.set_ymin(tmp);
+          infile >> tmp; box.set_xmax(tmp);
+          infile >> tmp; box.set_ymax(tmp);
+          int type;
+          infile >> type; box.set_type(type);
+          boxes.push_back(box);
+      }
+      lines.push_back(std::make_pair(filename, boxes));
   }
 
   if (FLAGS_shuffle) {
@@ -132,13 +137,10 @@ int main(int argc, char** argv) {
     DrivingData data;
     const string image_path = root_folder + lines[line_id].first;
     data.set_car_img_source(image_path);
-    const vector<int>& bbs = lines[line_id].second;
-    for (int i = 0; i < bbs.size(); i += FLAGS_num_info_per_box) {
+    const vector<CarBoundingBox>& bbs = lines[line_id].second;
+    for (int i = 0; i < bbs.size(); i ++) {
       CarBoundingBox *box = data.add_car_boxes();
-      box->set_xmin(bbs[i]);
-      box->set_ymin(bbs[i + 1]);
-      box->set_xmax(bbs[i + 2]);
-      box->set_ymax(bbs[i + 3]);
+      box->CopyFrom(bbs[i]);
     }
     if (!ReadImageToDatum(image_path, 0,
         resize_height, resize_width, is_color, data.mutable_car_image_datum())) {
