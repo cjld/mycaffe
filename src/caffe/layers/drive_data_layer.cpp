@@ -55,7 +55,7 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
         param.tiling_width() * param.label_resolution()
     };
     int shape_type[4] = {
-        batch_size, param.catalog_number()+1,
+        batch_size, 1,
         param.tiling_height() * param.catalog_resolution(),
         param.tiling_width() * param.catalog_resolution()
     };
@@ -91,8 +91,17 @@ bool ReadBoundingBoxLabelToDatum(
     / param.cropped_width();
   const float resize = param.resize();
 
+  const int type_label_width = width * param.catalog_resolution();
+  const int type_label_height = height * param.catalog_resolution();
+  const int type_stride = full_label_width / type_label_width;
+
+
   // 1 pixel label, 4 bounding box coordinates, 3 normalization labels.
   const int num_total_labels = kNumRegressionMasks;
+  cv::Mat box_mask(full_label_height,
+                   full_label_width, CV_32F,
+                   cv::Scalar(0.0));
+  //cv::Mat circle_mask, poly_mask;
   vector<cv::Mat *> labels;
   for (int i = 0; i < num_total_labels; ++i) {
     labels.push_back(
@@ -100,12 +109,12 @@ bool ReadBoundingBoxLabelToDatum(
                     full_label_width, CV_32F,
                     cv::Scalar(0.0)));
   }
-
   for (int i = 0; i < data.car_boxes_size(); ++i) {
     float xmin = data.car_boxes(i).xmin()*resize;
     float ymin = data.car_boxes(i).ymin()*resize;
     float xmax = data.car_boxes(i).xmax()*resize;
     float ymax = data.car_boxes(i).ymax()*resize;
+    int ttype = data.car_boxes(i).type();
     float ow = xmax - xmin;
     float oh = ymax - ymin;
     xmin = std::min<float>(std::max<float>(0, xmin - w_off), param.cropped_width());
@@ -170,6 +179,7 @@ bool ReadBoundingBoxLabelToDatum(
       cv::Mat roi(*labels[j], r);
       roi = cv::Scalar(flabels[j]);
     }
+    cv::rectangle(box_mask, r, cv::Scalar(ttype+1), -1);
   }
 
   int total_num_pixels = 0;
@@ -216,6 +226,15 @@ bool ReadBoundingBoxLabelToDatum(
         }
         datum->add_float_data(val - adjustment);
       }
+    }
+  }
+
+  // handle catalog
+  float *ptr = label_type;
+  for (int y = 0; y < type_label_height; ++y) {
+    for (int x = 0; x < type_label_width; ++x) {
+      *ptr = box_mask.at<float>(y*type_stride,x*type_stride);
+      ptr++;
     }
   }
 
@@ -271,6 +290,8 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   }
 
   const int crop_num = this->layer_param().drive_data_param().crop_num();
+  int type_label_strip = param.tiling_height()*param.tiling_width()
+          *param.catalog_resolution()*param.catalog_resolution();
 
   for (int item_id = 0; item_id < batch_size; ++item_id) {
     timer.Start();
@@ -290,6 +311,11 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     int cheight = param.cropped_height();
     int cwidth = param.cropped_width();
     int channal = img_datum.channels();
+    Dtype *t_lable_type = NULL;
+    if (label_type != NULL) {
+        t_lable_type = label_type + type_label_strip*item_id;
+        caffe_set(type_label_strip, (Dtype)0, t_lable_type);
+    }
     try_again:
     int h_off = rheight == cheight ? 0 : Rand() % (rheight - cheight);
     int w_off = rwidth == cwidth ? 0 : Rand() % (rwidth - cwidth);
@@ -298,7 +324,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     if (this->output_labels_) {
       // Call appropriate functions for genearting each label
       if (!ReadBoundingBoxLabelToDatum(data, &label_datums[0],
-            h_off, w_off, this->layer_param().drive_data_param(),(float*)label_type))
+            h_off, w_off, param,(float*)t_lable_type))
           if (can_pass)
             goto try_again;
     }
