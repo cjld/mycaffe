@@ -48,17 +48,19 @@ void BasePrefetchingDataLayer<Dtype>::LayerSetUp(
   // cudaMalloc calls when the main thread is running. In some GPUs this
   // seems to cause failures if we do not so.
   for (int i = 0; i < PREFETCH_COUNT; ++i) {
-    prefetch_[i].data_.mutable_cpu_data();
+    prefetch_[i].data().mutable_cpu_data();
     if (this->output_labels_) {
-      prefetch_[i].label_.mutable_cpu_data();
+      for (int j=0; j<top.size()-1; j++)
+        prefetch_[i].label(j).mutable_cpu_data();
     }
   }
 #ifndef CPU_ONLY
   if (Caffe::mode() == Caffe::GPU) {
     for (int i = 0; i < PREFETCH_COUNT; ++i) {
-      prefetch_[i].data_.mutable_gpu_data();
+      prefetch_[i].data().mutable_gpu_data();
       if (this->output_labels_) {
-        prefetch_[i].label_.mutable_gpu_data();
+        for (int j=0; j<top.size()-1; j++)
+          prefetch_[i].label(j).mutable_gpu_data();
       }
     }
   }
@@ -84,7 +86,7 @@ void BasePrefetchingDataLayer<Dtype>::InternalThreadEntry() {
       load_batch(batch);
 #ifndef CPU_ONLY
       if (Caffe::mode() == Caffe::GPU) {
-        batch->data_.data().get()->async_gpu_push(stream);
+        batch->data().data().get()->async_gpu_push(stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
       }
 #endif
@@ -105,17 +107,19 @@ void BasePrefetchingDataLayer<Dtype>::Forward_cpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
   Batch<Dtype>* batch = prefetch_full_.pop("Data layer prefetch queue empty");
   // Reshape to loaded data.
-  top[0]->ReshapeLike(batch->data_);
+  top[0]->ReshapeLike(batch->data());
   // Copy the data
-  caffe_copy(batch->data_.count(), batch->data_.cpu_data(),
+  caffe_copy(batch->data().count(), batch->data().cpu_data(),
              top[0]->mutable_cpu_data());
   DLOG(INFO) << "Prefetch copied";
   if (this->output_labels_) {
     // Reshape to loaded labels.
-    top[1]->ReshapeLike(batch->label_);
-    // Copy the labels.
-    caffe_copy(batch->label_.count(), batch->label_.cpu_data(),
-        top[1]->mutable_cpu_data());
+    for (int i=1; i<top.size(); i++) {
+        top[i]->ReshapeLike(batch->label(i-1));
+        // Copy the labels.
+        caffe_copy(batch->label(i-1).count(), batch->label(i-1).cpu_data(),
+            top[i]->mutable_cpu_data());
+    }
   }
 
   prefetch_free_.push(batch);

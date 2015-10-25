@@ -40,7 +40,7 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
 
   top[0]->Reshape(top_shape);
   for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
-    this->prefetch_[i].data_.Reshape(top_shape);
+    this->prefetch_[i].data().Reshape(top_shape);
   }
   LOG(INFO) << "output data size: " << top[0]->num() << ","
       << top[0]->channels() << "," << top[0]->height() << ","
@@ -48,16 +48,28 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   // label
   if (this->output_labels_) {
     vector<int> label_shape(4,0);
+    vector<int> type_shape(4,0);
     int shape[4] = {
         batch_size, kNumRegressionMasks,
         param.tiling_height() * param.label_resolution(),
         param.tiling_width() * param.label_resolution()
     };
+    int shape_type[4] = {
+        batch_size, param.catalog_number()+1,
+        param.tiling_height() * param.catalog_resolution(),
+        param.tiling_width() * param.catalog_resolution()
+    };
     memcpy(&label_shape[0], shape, sizeof(shape));
     top[1]->Reshape(label_shape);
+
+    memcpy(&type_shape[0], shape_type, sizeof(shape_type));
+    CHECK_GE(top.size(), 3);
+    top[2]->Reshape(type_shape);
     for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
-      this->prefetch_[i].label_.Reshape(label_shape);
+      this->prefetch_[i].label(0).Reshape(label_shape);
+      this->prefetch_[i].label(1).Reshape(type_shape);
     }
+
   }
 }
 
@@ -66,7 +78,7 @@ float rand_float() {return rand()*1.0f / RAND_MAX;}
 
 bool ReadBoundingBoxLabelToDatum(
     const DrivingData& data, Datum* datum, const int h_off, const int w_off,
-    const DriveDataParameter& param) {
+    const DriveDataParameter& param, float* label_type) {
   bool have_obj = false;
   const int grid_dim = param.label_resolution();
   const int width = param.tiling_width();
@@ -224,7 +236,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   double read_time = 0;
   double trans_time = 0;
   CPUTimer timer;
-  CHECK(batch->data_.count());
+  CHECK(batch->data().count());
   DriveDataParameter param = this->layer_param_.drive_data_param();
 
   // Reshape according to the first datum of each batch
@@ -242,18 +254,20 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
 
   // Reshape batch according to the batch_size.
   top_shape[0] = batch_size;
-  batch->data_.Reshape(top_shape);
+  batch->data().Reshape(top_shape);
 
-  Dtype* top_data = batch->data_.mutable_cpu_data();
+  Dtype* top_data = batch->data().mutable_cpu_data();
   const Dtype* data_mean_c = this->data_transformer_->data_mean_.cpu_data();
   vector<Dtype> v_mean(data_mean_c, data_mean_c+this->data_transformer_->data_mean_.count());
   Dtype *data_mean = &v_mean[0];
 
   vector<Dtype*> top_labels;
+  Dtype *label_type = NULL;
 
   if (this->output_labels_) {
-    Dtype *top_label = batch->label_.mutable_cpu_data();
+    Dtype *top_label = batch->label().mutable_cpu_data();
     top_labels.push_back(top_label);
+    label_type = batch->label(1).mutable_cpu_data();
   }
 
   const int crop_num = this->layer_param().drive_data_param().crop_num();
@@ -284,7 +298,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     if (this->output_labels_) {
       // Call appropriate functions for genearting each label
       if (!ReadBoundingBoxLabelToDatum(data, &label_datums[0],
-            h_off, w_off, this->layer_param().drive_data_param()))
+            h_off, w_off, this->layer_param().drive_data_param(),(float*)label_type))
           if (can_pass)
             goto try_again;
     }

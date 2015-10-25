@@ -56,7 +56,30 @@ class BaseDataLayer : public Layer<Dtype> {
 template <typename Dtype>
 class Batch {
  public:
-  Blob<Dtype> data_, label_;
+  vector< Blob<Dtype>* > blobs;
+
+  void resize(int n) {
+      if (blobs.size()<n) {
+          DLOG(INFO) << "resize batch to " << n;
+          while (blobs.size() < n)
+              blobs.push_back(new Blob<Dtype>);
+      }
+  }
+
+  ~Batch() {
+      for (int i=0; i<blobs.size(); i++)
+          delete blobs[i];
+  }
+
+  Blob<Dtype> &data() {
+      resize(1);
+      return *blobs[0];
+  }
+
+  Blob<Dtype> &label(int i=0) {
+      resize(2+i);
+      return *blobs[1+i];
+  }
 };
 
 template <typename Dtype>
@@ -118,6 +141,7 @@ class DriveDataLayer : public DataLayer<Dtype> {
     virtual void DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
         const vector<Blob<Dtype>*>& top);
     virtual inline const char* type() const { return "DriveData"; }
+    virtual inline int MaxTopBlobs() const { return 3; }
 
     virtual void load_batch(Batch<Dtype>* batch);
 };

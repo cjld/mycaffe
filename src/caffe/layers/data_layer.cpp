@@ -40,17 +40,19 @@ void DataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   top_shape[0] = batch_size;
   top[0]->Reshape(top_shape);
   for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
-    this->prefetch_[i].data_.Reshape(top_shape);
+    this->prefetch_[i].data().Reshape(top_shape);
   }
   LOG(INFO) << "output data size: " << top[0]->num() << ","
       << top[0]->channels() << "," << top[0]->height() << ","
       << top[0]->width();
   // label
   if (this->output_labels_) {
-    vector<int> label_shape(1, batch_size);
-    top[1]->Reshape(label_shape);
-    for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
-      this->prefetch_[i].label_.Reshape(label_shape);
+    for (int j=1; j<top.size(); j++) {
+        vector<int> label_shape(1, batch_size);
+        top[j]->Reshape(label_shape);
+        for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
+          this->prefetch_[i].label(j-1).Reshape(label_shape);
+        }
     }
   }
 }
@@ -63,7 +65,7 @@ void DataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   double read_time = 0;
   double trans_time = 0;
   CPUTimer timer;
-  CHECK(batch->data_.count());
+  CHECK(batch->data().count());
   CHECK(this->transformed_data_.count());
 
   // Reshape according to the first datum of each batch
@@ -77,13 +79,13 @@ void DataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   this->transformed_data_.Reshape(top_shape);
   // Reshape batch according to the batch_size.
   top_shape[0] = batch_size;
-  batch->data_.Reshape(top_shape);
+  batch->data().Reshape(top_shape);
 
-  Dtype* top_data = batch->data_.mutable_cpu_data();
+  Dtype* top_data = batch->data().mutable_cpu_data();
   Dtype* top_label = NULL;  // suppress warnings about uninitialized variables
 
   if (this->output_labels_) {
-    top_label = batch->label_.mutable_cpu_data();
+    top_label = batch->label().mutable_cpu_data();
   }
   for (int item_id = 0; item_id < batch_size; ++item_id) {
     timer.Start();
@@ -93,7 +95,7 @@ void DataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     read_time += timer.MicroSeconds();
     timer.Start();
     // Apply data transformations (mirror, scale, crop...)
-    int offset = batch->data_.offset(item_id);
+    int offset = batch->data().offset(item_id);
     this->transformed_data_.set_cpu_data(top_data + offset);
     this->data_transformer_->Transform(datum, &(this->transformed_data_));
     // Copy label.

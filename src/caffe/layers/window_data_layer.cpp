@@ -172,7 +172,7 @@ void WindowDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   const int batch_size = this->layer_param_.window_data_param().batch_size();
   top[0]->Reshape(batch_size, channels, crop_size, crop_size);
   for (int i = 0; i < this->PREFETCH_COUNT; ++i)
-    this->prefetch_[i].data_.Reshape(
+    this->prefetch_[i].data().Reshape(
         batch_size, channels, crop_size, crop_size);
 
   LOG(INFO) << "output data size: " << top[0]->num() << ","
@@ -182,7 +182,7 @@ void WindowDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   vector<int> label_shape(1, batch_size);
   top[1]->Reshape(label_shape);
   for (int i = 0; i < this->PREFETCH_COUNT; ++i) {
-    this->prefetch_[i].label_.Reshape(label_shape);
+    this->prefetch_[i].label().Reshape(label_shape);
   }
 
   // data mean
@@ -231,8 +231,8 @@ void WindowDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   double read_time = 0;
   double trans_time = 0;
   CPUTimer timer;
-  Dtype* top_data = batch->data_.mutable_cpu_data();
-  Dtype* top_label = batch->label_.mutable_cpu_data();
+  Dtype* top_data = batch->data().mutable_cpu_data();
+  Dtype* top_label = batch->label().mutable_cpu_data();
   const Dtype scale = this->layer_param_.window_data_param().scale();
   const int batch_size = this->layer_param_.window_data_param().batch_size();
   const int context_pad = this->layer_param_.window_data_param().context_pad();
@@ -256,7 +256,7 @@ void WindowDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   bool use_square = (crop_mode == "square") ? true : false;
 
   // zero out batch
-  caffe_set(batch->data_.count(), Dtype(0), top_data);
+  caffe_set(batch->data().count(), Dtype(0), top_data);
 
   const int num_fg = static_cast<int>(static_cast<float>(batch_size)
       * fg_fraction);

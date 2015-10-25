@@ -9,16 +9,18 @@ void BasePrefetchingDataLayer<Dtype>::Forward_gpu(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top) {
   Batch<Dtype>* batch = prefetch_full_.pop("Data layer prefetch queue empty");
   // Reshape to loaded data.
-  top[0]->ReshapeLike(batch->data_);
+  top[0]->ReshapeLike(batch->data());
   // Copy the data
-  caffe_copy(batch->data_.count(), batch->data_.gpu_data(),
+  caffe_copy(batch->data().count(), batch->data().gpu_data(),
       top[0]->mutable_gpu_data());
   if (this->output_labels_) {
-    // Reshape to loaded labels.
-    top[1]->ReshapeLike(batch->label_);
-    // Copy the labels.
-    caffe_copy(batch->label_.count(), batch->label_.gpu_data(),
-        top[1]->mutable_gpu_data());
+    for (int i=1; i<top.size(); i++) {
+        // Reshape to loaded labels.
+        top[i]->ReshapeLike(batch->label(i-1));
+        // Copy the labels.
+        caffe_copy(batch->label(i-1).count(), batch->label(i-1).gpu_data(),
+            top[i]->mutable_gpu_data());
+    }
   }
 
   prefetch_free_.push(batch);
