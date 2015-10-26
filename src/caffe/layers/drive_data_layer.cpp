@@ -78,8 +78,9 @@ float rand_float() {return rand()*1.0f / RAND_MAX;}
 
 bool ReadBoundingBoxLabelToDatum(
     const DrivingData& data, Datum* datum, const int h_off, const int w_off,
-    const DriveDataParameter& param, float* label_type) {
+    const DriveDataParameter& param, float* label_type, bool can_pass) {
   bool have_obj = false;
+  bool have_valid = false;
   const int grid_dim = param.label_resolution();
   const int width = param.tiling_width();
   const int height = param.tiling_height();
@@ -94,6 +95,38 @@ bool ReadBoundingBoxLabelToDatum(
   const int type_label_width = width * param.catalog_resolution();
   const int type_label_height = height * param.catalog_resolution();
   const int type_stride = full_label_width / type_label_width;
+
+  // fast check
+
+  for (int i = 0; i < data.car_boxes_size(); ++i) {
+    float xmin = data.car_boxes(i).xmin()*resize;
+    float ymin = data.car_boxes(i).ymin()*resize;
+    float xmax = data.car_boxes(i).xmax()*resize;
+    float ymax = data.car_boxes(i).ymax()*resize;
+    int ttype = data.car_boxes(i).type();
+    assert(ttype+1 < param.catalog_number());
+    float ow = xmax - xmin;
+    float oh = ymax - ymin;
+    if (ow <= param.cropped_width() && oh <= param.cropped_height()) {
+        have_valid = true;
+    }
+    xmin = std::min<float>(std::max<float>(0, xmin - w_off), param.cropped_width());
+    xmax = std::min<float>(std::max<float>(0, xmax - w_off), param.cropped_width());
+    ymin = std::min<float>(std::max<float>(0, ymin - h_off), param.cropped_height());
+    ymax = std::min<float>(std::max<float>(0, ymax - h_off), param.cropped_height());
+    float w = xmax - xmin;
+    float h = ymax - ymin;
+    // drop boxes that unrecognize
+    if (w*h < ow*oh*unrecog_factor)
+        continue;
+    if (w < 4 || h < 4) {
+      // drop boxes that are too small
+      continue;
+    }
+    have_obj = true;
+  }
+  if (!have_valid) have_obj = true;
+  if (can_pass && !have_obj) return false;
 
 
   // 1 pixel label, 4 bounding box coordinates, 3 normalization labels.
@@ -115,6 +148,7 @@ bool ReadBoundingBoxLabelToDatum(
     float xmax = data.car_boxes(i).xmax()*resize;
     float ymax = data.car_boxes(i).ymax()*resize;
     int ttype = data.car_boxes(i).type();
+    assert(ttype+1 < param.catalog_number());
     float ow = xmax - xmin;
     float oh = ymax - ymin;
     xmin = std::min<float>(std::max<float>(0, xmin - w_off), param.cropped_width());
@@ -130,7 +164,6 @@ bool ReadBoundingBoxLabelToDatum(
       // drop boxes that are too small
       continue;
     }
-    have_obj = true;
     // shrink bboxes
     int gxmin = cvFloor((xmin + w * half_shrink_factor) * scaling);
     int gxmax = cvCeil((xmax - w * half_shrink_factor) * scaling);
@@ -240,10 +273,10 @@ bool ReadBoundingBoxLabelToDatum(
 
   CHECK_EQ(datum->float_data_size(),
            num_total_labels * full_label_height * full_label_width);
+
   for (int i = 0; i < num_total_labels; ++i) {
     delete labels[i];
   }
-
   return have_obj;
 }
 
@@ -316,15 +349,15 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
         t_lable_type = label_type + type_label_strip*item_id;
         caffe_set(type_label_strip, (Dtype)0, t_lable_type);
     }
+    vector<Datum> label_datums(kNumLabels);
     try_again:
     int h_off = rheight == cheight ? 0 : Rand() % (rheight - cheight);
     int w_off = rwidth == cwidth ? 0 : Rand() % (rwidth - cwidth);
 
-    vector<Datum> label_datums(kNumLabels);
     if (this->output_labels_) {
       // Call appropriate functions for genearting each label
       if (!ReadBoundingBoxLabelToDatum(data, &label_datums[0],
-            h_off, w_off, param,(float*)t_lable_type))
+            h_off, w_off, param,(float*)t_lable_type, can_pass))
           if (can_pass)
             goto try_again;
     }
