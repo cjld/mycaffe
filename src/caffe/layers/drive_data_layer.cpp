@@ -77,10 +77,9 @@ int Rand() {return rand();}
 float rand_float() {return rand()*1.0f / RAND_MAX;}
 
 bool ReadBoundingBoxLabelToDatum(
-    const DrivingData& data, Datum* datum, const int h_off, const int w_off,
-    const DriveDataParameter& param, float* label_type, bool can_pass) {
+    const DrivingData& data, Datum* datum, const int h_off, const int w_off, const float resize,
+    const DriveDataParameter& param, float* label_type, bool can_pass, int bid) {
   bool have_obj = false;
-  bool have_valid = false;
   const int grid_dim = param.label_resolution();
   const int width = param.tiling_width();
   const int height = param.tiling_height();
@@ -90,7 +89,7 @@ bool ReadBoundingBoxLabelToDatum(
   const float unrecog_factor = param.unrecognize_factor();
   const float scaling = static_cast<float>(full_label_width) \
     / param.cropped_width();
-  const float resize = param.resize();
+  //const float resize = param.resize();
 
   const int type_label_width = width * param.catalog_resolution();
   const int type_label_height = height * param.catalog_resolution();
@@ -99,17 +98,14 @@ bool ReadBoundingBoxLabelToDatum(
   // fast check
 
   for (int i = 0; i < data.car_boxes_size(); ++i) {
+    if (i != bid) continue;
     float xmin = data.car_boxes(i).xmin()*resize;
     float ymin = data.car_boxes(i).ymin()*resize;
     float xmax = data.car_boxes(i).xmax()*resize;
     float ymax = data.car_boxes(i).ymax()*resize;
-    int ttype = data.car_boxes(i).type();
     assert(ttype+1 < param.catalog_number());
     float ow = xmax - xmin;
     float oh = ymax - ymin;
-    if (ow <= param.cropped_width() && oh <= param.cropped_height()) {
-        have_valid = true;
-    }
     xmin = std::min<float>(std::max<float>(0, xmin - w_off), param.cropped_width());
     xmax = std::min<float>(std::max<float>(0, xmax - w_off), param.cropped_width());
     ymin = std::min<float>(std::max<float>(0, ymin - h_off), param.cropped_height());
@@ -119,13 +115,15 @@ bool ReadBoundingBoxLabelToDatum(
     // drop boxes that unrecognize
     if (w*h < ow*oh*unrecog_factor)
         continue;
+
     if (w < 4 || h < 4) {
       // drop boxes that are too small
       continue;
     }
+    if (std::max(w,h) < param.train_min() || std::max(w,h) > param.train_max())
+        continue;
     have_obj = true;
   }
-  if (!have_valid) have_obj = true;
   if (can_pass && !have_obj) return false;
 
 
@@ -164,6 +162,9 @@ bool ReadBoundingBoxLabelToDatum(
       // drop boxes that are too small
       continue;
     }
+
+    if (std::max(w,h) < param.reco_min() || std::max(w,h) > param.reco_max())
+        continue;
     // shrink bboxes
     int gxmin = cvFloor((xmin + w * half_shrink_factor) * scaling);
     int gxmax = cvCeil((xmax - w * half_shrink_factor) * scaling);
@@ -280,6 +281,14 @@ bool ReadBoundingBoxLabelToDatum(
   return have_obj;
 }
 
+float get_box_size(const caffe::CarBoundingBox &box) {
+    float xmin = box.xmin();
+    float ymin = box.ymin();
+    float xmax = box.xmax();
+    float ymax = box.ymax();
+    return std::max(xmax-xmin, ymax-ymin);
+}
+
 // This function is called on prefetch thread
 template<typename Dtype>
 void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
@@ -295,12 +304,10 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   // on single input batches allows for inputs of varying dimension.
   const int batch_size = this->layer_param_.data_param().batch_size();
   DrivingData data;
-  string *raw_data;
-  data.ParseFromString(*(raw_data = this->reader_.full().pop("Waiting for data")));
-  const Datum& datum = data.car_image_datum();
+  string *raw_data = NULL;
 
   vector<int> top_shape(4,0);
-  int shape[4] = {batch_size, datum.channels(),
+  int shape[4] = {batch_size, 3,
                   (int)param.cropped_height(), (int)param.cropped_width()};
   memcpy(&top_shape[0], shape, sizeof(shape));
 
@@ -325,42 +332,82 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
   const int crop_num = this->layer_param().drive_data_param().crop_num();
   int type_label_strip = param.tiling_height()*param.tiling_width()
           *param.catalog_resolution()*param.catalog_resolution();
+  bool need_new_data = true;
+  int bid = 0;
 
   for (int item_id = 0; item_id < batch_size; ++item_id) {
     timer.Start();
     // get a datum
-    if (item_id != 0 && item_id%crop_num == 0)
+    if (need_new_data) {
         data.ParseFromString(*(raw_data = this->reader_.full().pop("Waiting for data")));
+        bid = 0;
+    } else {
+        bid ++;
+    }
+    if (item_id+1 == batch_size) need_new_data = true;
+
     read_time += timer.MicroSeconds();
     timer.Start();
-
-    const Datum& img_datum = data.car_image_datum();
-
-    const string& img_datum_data = img_datum.data();
-    float resize = this->layer_param().drive_data_param().resize();
-    bool can_pass = rand_float() > this->layer_param().drive_data_param().random_crop_ratio();
-    int rheight = (int)(img_datum.height() * resize);
-    int rwidth = (int)(img_datum.height() * resize);
-    int cheight = param.cropped_height();
-    int cwidth = param.cropped_width();
-    int channal = img_datum.channels();
     Dtype *t_lable_type = NULL;
     if (label_type != NULL) {
         t_lable_type = label_type + type_label_strip*item_id;
         caffe_set(type_label_strip, (Dtype)0, t_lable_type);
     }
     vector<Datum> label_datums(kNumLabels);
-    try_again:
-    int h_off = rheight == cheight ? 0 : Rand() % (rheight - cheight);
-    int w_off = rwidth == cwidth ? 0 : Rand() % (rwidth - cwidth);
+    const Datum& img_datum = data.car_image_datum();
+    const string& img_datum_data = img_datum.data();
+    bool can_pass = rand_float() > this->layer_param().drive_data_param().random_crop_ratio();
+    int cheight = param.cropped_height();
+    int cwidth = param.cropped_width();
+    int channal = img_datum.channels();
+    int hid = bid/crop_num;
+    float bsize = get_box_size(data.car_boxes(hid));
+    float rmax = std::min(param.train_max() / bsize, param.resize_max());
+    float rmin = std::max(param.train_min() / bsize, param.resize_min());
+
+try_again:
+    float resize = this->layer_param().drive_data_param().resize();
+    int h_off, w_off;
+    if (resize < 0) {
+        if (rmax <= rmin || !can_pass) {
+            can_pass = false;
+            resize = rand_float() * (param.resize_max()-param.resize_min()) + param.resize_min();
+            int rheight = (int)(img_datum.height() * resize);
+            int rwidth = (int)(img_datum.height() * resize);
+            h_off = rheight <= cheight ? 0 : Rand() % (rheight - cheight);
+            w_off = rwidth <= cwidth ? 0 : Rand() % (rwidth - cwidth);
+        } else {
+            //can_pass = false;
+            int h_max, h_min, w_max, w_min;
+            resize = rand_float() * (rmax-rmin) + rmin;
+            //LOG(INFO) << "resize " << rmax << " " << rmin << " " << resize << ' ' << item_id;
+            h_min = data.car_boxes(hid).ymin()*resize - param.cropped_height();
+            h_max = data.car_boxes(hid).ymax()*resize;
+            w_min = data.car_boxes(hid).xmin()*resize - param.cropped_width();
+            w_max = data.car_boxes(hid).xmax()*resize;
+            w_off = (Rand() % (w_max-w_min) + w_min);
+            h_off = (Rand() % (h_max-h_min) + h_min);
+            //w_off = data.car_boxes(hid).xmax()*resize - param.cropped_width();;
+            //h_off = data.car_boxes(hid).ymax()*resize - param.cropped_height();
+        }
+    } else {
+        int rheight = (int)(img_datum.height() * resize);
+        int rwidth = (int)(img_datum.height() * resize);
+        h_off = rheight <= cheight ? 0 : Rand() % (rheight - cheight);
+        w_off = rwidth <= cwidth ? 0 : Rand() % (rwidth - cwidth);
+    }
+    //LOG(INFO) << "?" << w_off << ' ' << h_off << ' ' << resize << ' ' << rmax << ' ' << rmin;
+
 
     if (this->output_labels_) {
       // Call appropriate functions for genearting each label
       if (!ReadBoundingBoxLabelToDatum(data, &label_datums[0],
-            h_off, w_off, param,(float*)t_lable_type, can_pass))
+            h_off, w_off, resize, param,(float*)t_lable_type, can_pass, hid))
           if (can_pass)
             goto try_again;
     }
+    if (bid+1 >= crop_num*data.car_boxes_size())
+        need_new_data = true;
 
     cv::Mat_<Dtype> mean_img(cheight, cwidth);
     Dtype* itop_data = top_data+item_id*channal*cheight*cwidth;
@@ -400,8 +447,9 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     }
     trans_time += timer.MicroSeconds();
 
-    if (item_id%crop_num == 0)
+    if (need_new_data) {
         this->reader_.free().push(const_cast<string*>(raw_data));
+    }
   }
   timer.Stop();
   batch_timer.Stop();

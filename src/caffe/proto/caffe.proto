@@ -974,9 +974,10 @@ message DriveDataParameter {
   // when the overlap area is smaller than this,
   // treat this pattern unrecognize
   optional float unrecognize_factor = 2 [default = 0.9];
-  // crop how many image from one image
+  // crop how many image from one mark
   optional uint32 crop_num = 3 [default = 4];
   optional float random_crop_ratio = 4 [default = 0];
+  // set -1 to use random resize
   optional float resize = 5 [default = 1];
   optional float scale = 6 [default = 1];
   optional uint32 cropped_height = 7 [default = 480];
@@ -991,6 +992,17 @@ message DriveDataParameter {
   optional int32 catalog_resolution = 12 [default = 2];
   // number of catalog
   optional int32 catalog_number = 13 [default = 150];
+
+  // only available when resize == -1
+  optional float resize_max = 14 [default = 5];
+  optional float resize_min = 15 [default = 0.1];
+  // max size that can be recognized
+  optional float reco_max = 16 [default = 170];
+  optional float reco_min = 17 [default = 40];
+  // training size
+  optional float train_max = 18 [default = 200];
+  optional float train_min = 19 [default = 20];
+  //optional float resize_pow_rate = 20 [default = 0.3];
 }
 
 message SPPParameter {
