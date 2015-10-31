@@ -135,6 +135,8 @@ class DataLayer : public BasePrefetchingDataLayer<Dtype> {
 
 template <typename Dtype>
 class DriveDataLayer : public DataLayer<Dtype> {
+    vector<cv::Mat> genpic;
+    vector<int> genpic_type;
  public:
     explicit DriveDataLayer(const LayerParameter& param);
     virtual ~DriveDataLayer() {};

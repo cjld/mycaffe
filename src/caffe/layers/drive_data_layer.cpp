@@ -1,5 +1,6 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
 
 #include <stdint.h>
 
@@ -45,6 +46,20 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
   LOG(INFO) << "output data size: " << top[0]->num() << ","
       << top[0]->channels() << "," << top[0]->height() << ","
       << top[0]->width();
+  if (param.genlist_file() != "") {
+      LOG(INFO) << "using genlist " << param.genlist_file();
+      std::ifstream fin(param.genlist_file().c_str());
+      std::string picname;
+      while (fin >> picname) {
+          cv::Mat img = cv::imread(picname.c_str(), CV_LOAD_IMAGE_UNCHANGED);
+          int tp;
+          fin >> tp;
+          DLOG(INFO) << "get " << picname << ' ' << tp;
+          genpic.push_back(img);
+          genpic_type.push_back(tp);
+      }
+      LOG(INFO) << "total " << genpic.size() << " artificial pics";
+  }
   // label
   if (this->output_labels_) {
     vector<int> label_shape(4,0);
@@ -76,9 +91,15 @@ void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
 int Rand() {return rand();}
 float rand_float() {return rand()*1.0f / RAND_MAX;}
 
+bool check_cross(float l1, float r1, float l2, float r2) {
+    if (r1 < l2 || l1 > r2) return false;
+    return true;
+}
+
 bool ReadBoundingBoxLabelToDatum(
     const DrivingData& data, Datum* datum, const int h_off, const int w_off, const float resize,
-    const DriveDataParameter& param, float* label_type, bool can_pass, int bid) {
+    const DriveDataParameter& param, float* label_type, bool can_pass, int bid,
+    vector<cv::Mat> &genpic, vector<int> &genpic_type, vector<cv::Mat> &picgen) {
   bool have_obj = false;
   const int grid_dim = param.label_resolution();
   const int width = param.tiling_width();
@@ -214,6 +235,167 @@ bool ReadBoundingBoxLabelToDatum(
       roi = cv::Scalar(flabels[j]);
     }
     cv::rectangle(box_mask, r, cv::Scalar(ttype+1), -1);
+  }
+
+  if (genpic.size() > 0 && rand_float() < param.gen_rate()) {
+      // generate artificial mark
+      int i = Rand() % genpic.size();
+      cv::Mat img;
+      genpic[i].convertTo(img, CV_32FC4);
+      vector<cv::Mat> imgs(4);
+      cv::split(img, imgs);
+      imgs[3] /= 255.;
+      int tp = genpic_type[i];
+      // assume it has 20 pad in image
+      int pad = 40;
+      int size = 200;
+      float nsize = rand_float() * (param.train_max()-param.train_min())+param.train_min();
+      float noff_x, noff_y;
+      int try_time = 0;
+      int max_try = 1000;
+      while (try_time++ < max_try) {
+          noff_x = (rand_float() * (param.cropped_width()-nsize));
+          noff_y = (rand_float() * (param.cropped_height()-nsize));
+          bool ok = true;
+
+          for (int i = 0; i < data.car_boxes_size(); ++i) {
+            float xmin = data.car_boxes(i).xmin()*resize - w_off;
+            float ymin = data.car_boxes(i).ymin()*resize - h_off;
+            float xmax = data.car_boxes(i).xmax()*resize - w_off;
+            float ymax = data.car_boxes(i).ymax()*resize - h_off;
+            if (check_cross(xmin, xmax, noff_x-pad, noff_x+nsize+pad) &&
+                check_cross(ymin, ymax, noff_y-pad, noff_y+nsize+pad))
+            {
+                ok = false;
+                break;
+            }
+          }
+          if (ok) break;
+      }
+      if (try_time >= max_try) {
+          LOG(INFO) << "no space to place artificial mark";
+      } else {
+          //LOG(INFO) << "can place " << noff_x  << ' ' << noff_y;
+          int whs = Rand()&1;
+          cv::Point2f pts1[] = {cv::Point2f(0,0), cv::Point2f(1,0), cv::Point2f(0,1)};
+          cv::Point2f pts2[] = {cv::Point2f(0,0),
+                                cv::Point2f(1-whs*rand_float()*param.shrink_max(),
+                                            rand_float()*param.slip_max()*2-param.slip_max()),
+                                cv::Point2f(rand_float()*param.slip_max()*2-param.slip_max(),
+                                            1-(1-whs)*rand_float()*param.shrink_max())};
+          cv::Mat Ms = cv::getAffineTransform(pts1, pts2);
+          int blur_size = Rand() % (int)param.blur_max() * 2 + 1;
+          float noise_value = rand_float() * param.noise_max();
+          float gamma = std::exp(rand_float()*param.gamma_max()*2-param.gamma_max());
+          float kk = rand_float()*param.k_max()*2-param.k_max()+1;
+          float y0 = rand_float()*param.y0_max()*2-param.y0_max();
+
+          for (int i=0; i<4; i++) {
+              cv::Mat tmp = cv::Mat::zeros(imgs[0].size(), CV_32FC1);
+              cv::warpAffine(imgs[i], tmp, Ms, imgs[i].size(),
+                             cv::INTER_CUBIC, cv::BORDER_CONSTANT, i==3?0.0f:255.0f);
+              tmp.copyTo(imgs[i]);
+              // gaussian blur
+              cv::GaussianBlur(imgs[i], tmp, cv::Size(blur_size,blur_size), 0);
+              tmp.copyTo(imgs[i]);
+              if (i==3) break;
+              // add noise
+              cv::randn(tmp, 0, 1);
+              imgs[i] += (tmp-0.5)*(noise_value*255.);
+              double mmin, mmax;
+              cv::minMaxLoc(imgs[i],&mmin,&mmax);
+              imgs[i] = (imgs[i]-mmin)/(mmax-mmin)*255.0;
+              // gamma
+              cv::Mat lut_matrix(1, 256, CV_8UC1 );
+              uchar * ptr = lut_matrix.ptr();
+              for( int j = 0; j < 256; j++ ) {
+                  float v = j / 255.0f;
+                  v = pow(v,gamma)*kk+y0;
+                  if (v<0) v=0;
+                  if (v>1) v=1;
+                  ptr[j] = (int)(v * 255.0);
+              }
+              imgs[i].convertTo(tmp, CV_8UC1);
+              cv::LUT( tmp, lut_matrix, tmp );
+              tmp.convertTo(imgs[i], CV_32FC1);
+          }
+          float resize = nsize / size;
+          noff_x -= pad*resize;
+          noff_y -= pad*resize;
+          float mat[] = { resize,0.f,noff_x, 0.f,resize,noff_y};
+          cv::Mat_<float> M(2,3, mat);
+          for (int i=0; i<3; i++)
+              cv::warpAffine(imgs[i], picgen[i], M, picgen[0].size(), cv::INTER_CUBIC,
+                             cv::BORDER_CONSTANT, 255.0);
+          cv::warpAffine(imgs[3], picgen[3], M, picgen[0].size(), cv::INTER_CUBIC,
+                 cv::BORDER_CONSTANT, 0.0);
+          cv::Mat &mask = picgen[3];
+          float xmax=-1e30, xmin=1e30, ymax=-1e30, ymin=1e30;
+          for (int y=0; y<mask.size().height; y++) {
+              for (int x=0; x<mask.size().width; x++) {
+                  if (mask.at<float>(y,x) > 0.5) {
+                      xmax = std::max(xmax, x*1.0f+1);
+                      xmin = std::min(xmin, x*1.0f);
+                      ymax = std::max(ymax, y*1.0f+1);
+                      ymin = std::min(ymin, y*1.0f);
+                  }
+              }
+          }
+          float w = xmax-xmin, h = ymax-ymin;
+
+          if (std::max(w,h) >= param.reco_min() && std::max(w,h) <= param.reco_max()) {
+
+              int gxmin = cvFloor((xmin + w * half_shrink_factor) * scaling);
+              int gxmax = cvCeil((xmax - w * half_shrink_factor) * scaling);
+              int gymin = cvFloor((ymin + h * half_shrink_factor) * scaling);
+              int gymax = cvCeil((ymax - h * half_shrink_factor) * scaling);
+
+              CHECK_LE(gxmin, gxmax);
+              CHECK_LE(gymin, gymax);
+              if (gxmin >= full_label_width) {
+                gxmin = full_label_width - 1;
+              }
+              if (gymin >= full_label_height) {
+                gymin = full_label_height - 1;
+              }
+              CHECK_LE(0, gxmin);
+              CHECK_LE(0, gymin);
+              CHECK_LE(gxmax, full_label_width);
+              CHECK_LE(gymax, full_label_height);
+              if (gxmin == gxmax) {
+                if (gxmax < full_label_width - 1) {
+                  gxmax++;
+                } else if (gxmin > 0) {
+                  gxmin--;
+                }
+              }
+              if (gymin == gymax) {
+                if (gymax < full_label_height - 1) {
+                  gymax++;
+                } else if (gymin > 0) {
+                  gymin--;
+                }
+              }
+              CHECK_LT(gxmin, gxmax);
+              CHECK_LT(gymin, gymax);
+              if (gxmax == full_label_width) {
+                gxmax--;
+              }
+              if (gymax == full_label_height) {
+                gymax--;
+              }
+              cv::Rect r(gxmin, gymin, gxmax - gxmin + 1, gymax - gymin + 1);
+
+              float flabels[num_total_labels] =
+                  {1.0f, (float)xmin, (float)ymin, (float)xmax, (float)ymax, 1.0f / w, 1.0f / h, 1.0f};
+              for (int j = 0; j < num_total_labels; ++j) {
+                cv::Mat roi(*labels[j], r);
+                roi = cv::Scalar(flabels[j]);
+              }
+              cv::rectangle(box_mask, r, cv::Scalar(tp+1), -1);
+          }
+
+      }
   }
 
   int total_num_pixels = 0;
@@ -365,6 +547,13 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     float rmax = std::min(param.train_max() / bsize, param.resize_max());
     float rmin = std::max(param.train_min() / bsize, param.resize_min());
 
+    // TODO : hard code type
+    vector<cv::Mat> picgen;
+    if (genpic.size()>0) {
+        for (int i=0; i<4; i++)
+            picgen.push_back(cv::Mat::zeros(cheight, cwidth, CV_32F));
+    }
+
 try_again:
     float resize = this->layer_param().drive_data_param().resize();
     int h_off, w_off;
@@ -402,7 +591,8 @@ try_again:
     if (this->output_labels_) {
       // Call appropriate functions for genearting each label
       if (!ReadBoundingBoxLabelToDatum(data, &label_datums[0],
-            h_off, w_off, resize, param,(float*)t_lable_type, can_pass, hid))
+            h_off, w_off, resize, param,(float*)t_lable_type, can_pass, hid,
+            genpic, genpic_type, picgen))
           if (can_pass)
             goto try_again;
     }
@@ -425,6 +615,15 @@ try_again:
         cv::warpAffine(p_img, crop_img, M, crop_img.size(), cv::INTER_CUBIC);
 
         crop_img -= mean_img;
+        if (picgen.size()) {
+            cv::multiply(crop_img, 1-picgen[3], crop_img);
+            picgen[c] = (picgen[c] - 255./2)*param.gen_scale();
+            cv::multiply(picgen[c], picgen[3], picgen[c]);
+            crop_img += picgen[c];
+            //picgen[c].copyTo(crop_img);
+            //crop_img = picgen[c];
+            //crop_img = crop_img*(1-picgen[3]) + picgen[c]*picgen[3];
+        }
         crop_img *= this->layer_param().drive_data_param().scale();
     }
 

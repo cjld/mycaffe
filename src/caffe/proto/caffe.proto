@@ -1002,7 +1002,19 @@ message DriveDataParameter {
   // training size
   optional float train_max = 18 [default = 200];
   optional float train_min = 19 [default = 20];
-  //optional float resize_pow_rate = 20 [default = 0.3];
+
+  // artificial mark list
+  optional string genlist_file = 20 [default = ""];
+  optional float gen_rate = 21 [default = 0.5];
+
+  optional float blur_max = 22 [default = 15];
+  optional float noise_max = 23 [default = 0.5];
+  optional float gamma_max = 24 [default = 0.69314718055994529]; // log(2)
+  optional float k_max = 25 [default = 0.1];
+  optional float y0_max = 26 [default = 0.1];
+  optional float shrink_max = 27 [default = 0.5];
+  optional float slip_max = 28 [default = 0.2];
+  optional float gen_scale = 29 [default = 1.5];
 }
 
 message SPPParameter {
