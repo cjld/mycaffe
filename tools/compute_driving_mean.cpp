@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
         }
       }
       ++count;
-      if (count % 10000 == 0) {
+      if (count % 10 == 0) {
         LOG(ERROR) << "Processed " << count << " files.";
       }
     } while (mdb_cursor_get(mdb_cursor, &mdb_key, &mdb_value, MDB_NEXT)

@@ -124,7 +124,6 @@ bool ReadBoundingBoxLabelToDatum(
     float ymin = data.car_boxes(i).ymin()*resize;
     float xmax = data.car_boxes(i).xmax()*resize;
     float ymax = data.car_boxes(i).ymax()*resize;
-    assert(ttype+1 < param.catalog_number());
     float ow = xmax - xmin;
     float oh = ymax - ymin;
     xmin = std::min<float>(std::max<float>(0, xmin - w_off), param.cropped_width());
@@ -152,7 +151,16 @@ bool ReadBoundingBoxLabelToDatum(
   const int num_total_labels = kNumRegressionMasks;
   cv::Mat box_mask(full_label_height,
                    full_label_width, CV_32F,
-                   cv::Scalar(0.0));
+                   cv::Scalar(-1.0));
+  cv::Mat poly_mask(full_label_height,
+                   full_label_width, CV_32F,
+                   cv::Scalar(-1.0));
+  vector<bool> has_poly_mask(data.car_boxes_size()+1, false);
+  cv::Mat ellipse_mask(full_label_height,
+                   full_label_width, CV_32F,
+                   cv::Scalar(-1.0));
+  vector<bool> has_ellipse_mask(data.car_boxes_size()+1, false);
+  vector<int> itypes(data.car_boxes_size()+1);
   //cv::Mat circle_mask, poly_mask;
   vector<cv::Mat *> labels;
   for (int i = 0; i < num_total_labels; ++i) {
@@ -167,7 +175,8 @@ bool ReadBoundingBoxLabelToDatum(
     float xmax = data.car_boxes(i).xmax()*resize;
     float ymax = data.car_boxes(i).ymax()*resize;
     int ttype = data.car_boxes(i).type();
-    assert(ttype+1 < param.catalog_number());
+    itypes[i] = ttype;
+    CHECK_LT(ttype+1, param.catalog_number());
     float ow = xmax - xmin;
     float oh = ymax - ymin;
     xmin = std::min<float>(std::max<float>(0, xmin - w_off), param.cropped_width());
@@ -234,18 +243,52 @@ bool ReadBoundingBoxLabelToDatum(
       cv::Mat roi(*labels[j], r);
       roi = cv::Scalar(flabels[j]);
     }
-    cv::rectangle(box_mask, r, cv::Scalar(ttype+1), -1);
+    cv::Scalar idcolor(i);
+    cv::rectangle(box_mask, r, idcolor, -1);
+
+    if (param.use_mask()) {
+        caffe::CarBoundingBox box = data.car_boxes(i);
+        if (box.poly_mask_size()>2) {
+            std::vector<cv::Point2i> pts;
+            for (int j=0; j<box.poly_mask_size(); j++) {
+                caffe::FixedPoint p = box.poly_mask(j);
+                pts.push_back(cv::Point2i((int) ((p.x()*resize-w_off)*scaling),
+                                          (int) ((p.y()*resize-h_off)*scaling)));
+            }
+            std::vector< std::vector<cv::Point2i> > ptss;
+            ptss.push_back(pts);
+            cv::fillPoly(poly_mask, ptss, idcolor);
+            has_poly_mask[i] = true;
+        }
+        if (box.ellipse_mask_size() > 2) {
+            std::vector<cv::Point2i> pts;
+            for (int j=0; j<box.ellipse_mask_size(); j++) {
+                caffe::FixedPoint p = box.ellipse_mask(j);
+                pts.push_back(cv::Point2i((int) ((p.x()*resize-w_off)*scaling),
+                                          (int) ((p.y()*resize-h_off)*scaling)));
+            }
+            int tmp=0;
+            while (pts.size()<5) pts.push_back(pts[tmp++]);
+            cv::RotatedRect rbox = cv::fitEllipse(pts);
+            cv::ellipse(ellipse_mask, rbox, idcolor, -1);
+            has_ellipse_mask[i] = true;
+        }
+    }
+
+    // dirty code copy
   }
 
   if (genpic.size() > 0 && rand_float() < param.gen_rate()) {
       // generate artificial mark
-      int i = Rand() % genpic.size();
+      int ip = Rand() % genpic.size();
       cv::Mat img;
-      genpic[i].convertTo(img, CV_32FC4);
+      genpic[ip].convertTo(img, CV_32FC4);
       vector<cv::Mat> imgs(4);
       cv::split(img, imgs);
       imgs[3] /= 255.;
-      int tp = genpic_type[i];
+      int tp = genpic_type[ip];
+      int id = data.car_boxes_size();
+      itypes[id] = tp;
       // assume it has 20 pad in image
       int pad = 40;
       int size = 200;
@@ -392,7 +435,19 @@ bool ReadBoundingBoxLabelToDatum(
                 cv::Mat roi(*labels[j], r);
                 roi = cv::Scalar(flabels[j]);
               }
-              cv::rectangle(box_mask, r, cv::Scalar(tp+1), -1);
+              if (param.use_mask()) {
+                cv::Mat mask2(full_label_height,
+                              full_label_width, CV_32F,
+                                 cv::Scalar(0));
+                cv::resize(mask, mask2, mask2.size());
+                for (int y = 0; y < full_label_height; ++y) {
+                  for (int x = 0; x < full_label_width; ++x) {
+                      if (mask2.at<float>(y,x)>=0.5f)
+                          box_mask.at<float>(y,x) = (float)id;
+                  }
+                }
+              } else
+                cv::rectangle(box_mask, r, cv::Scalar(id), -1);
           }
 
       }
@@ -424,13 +479,28 @@ bool ReadBoundingBoxLabelToDatum(
   datum->clear_data();
   datum->clear_float_data();
 
+  for (int y = 0; y < full_label_height; ++y) {
+    for (int x = 0; x < full_label_width; ++x) {
+        float &val = box_mask.at<float>(y,x);
+        if (val != -1) {
+            int id = (int)val;
+            if (has_poly_mask[id] && poly_mask.at<float>(y,x) != val)
+                val = -1;
+            if (has_ellipse_mask[id] && ellipse_mask.at<float>(y,x) != val)
+                val = -1;
+        }
+    }
+  }
+
   for (int m = 0; m < num_total_labels; ++m) {
     for (int y = 0; y < full_label_height; ++y) {
       for (int x = 0; x < full_label_width; ++x) {
         float adjustment = 0;
         float val = labels[m]->at<float>(y, x);
         if (m == 0 || m > 4) {
-          // do nothing
+            if (m == 0 && param.use_mask()) {
+                val = (box_mask.at<float>(y,x)==-1)?0.0f:1.0f;
+            }
         } else if (labels[0]->at<float>(y, x) == 0.0) {
           // do nothing
         } else if (m % 2 == 1) {
@@ -449,7 +519,17 @@ bool ReadBoundingBoxLabelToDatum(
   float *ptr = label_type;
   for (int y = 0; y < type_label_height; ++y) {
     for (int x = 0; x < type_label_width; ++x) {
-      *ptr = box_mask.at<float>(y*type_stride,x*type_stride);
+      int id = (int)(box_mask.at<float>(y*type_stride,x*type_stride));
+      if (id>=0 && id<itypes.size())
+        *ptr = itypes[id]+1;
+      else
+      if (id == -1)
+        *ptr = 0;
+      else {
+          LOG(ERROR) << "invalid id " << id << " " << y << ' ' << x << ' ' <<
+                        (box_mask.at<float>(y*type_stride,x*type_stride)) << ' ' <<
+                        data.car_img_source();
+      }
       ptr++;
     }
   }
@@ -523,6 +603,7 @@ void DriveDataLayer<Dtype>::load_batch(Batch<Dtype>* batch) {
     if (need_new_data) {
         data.ParseFromString(*(raw_data = this->reader_.full().pop("Waiting for data")));
         bid = 0;
+        need_new_data = false;
     } else {
         bid ++;
     }
