@@ -29,7 +29,7 @@ DriveDataLayer<Dtype>::DriveDataLayer(const LayerParameter& param)
 template <typename Dtype>
 void DriveDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
-  srand(0);
+  srand(time(0));
   const int batch_size = this->layer_param_.data_param().batch_size();
   DriveDataParameter param = this->layer_param().drive_data_param();
   // Read a data point, and use it to initialize the top blob.
@@ -453,25 +453,6 @@ bool ReadBoundingBoxLabelToDatum(
       }
   }
 
-  int total_num_pixels = 0;
-  for (int y = 0; y < full_label_height; ++y) {
-    for (int x = 0; x < full_label_width; ++x) {
-      if (labels[num_total_labels - 1]->at<float>(y, x) == 1.0) {
-        total_num_pixels++;
-      }
-    }
-  }
-  if (total_num_pixels != 0) {
-    float reweight_value = 1.0 / total_num_pixels;
-    for (int y = 0; y < full_label_height; ++y) {
-      for (int x = 0; x < full_label_width; ++x) {
-        if (labels[num_total_labels - 1]->at<float>(y, x) == 1.0) {
-          labels[num_total_labels - 1]->at<float>(y, x) = reweight_value;
-        }
-      }
-    }
-  }
-
   datum->set_channels(num_total_labels);
   datum->set_height(full_label_height);
   datum->set_width(full_label_width);
@@ -479,6 +460,7 @@ bool ReadBoundingBoxLabelToDatum(
   datum->clear_data();
   datum->clear_float_data();
 
+  int total_num_pixels = 0;
   for (int y = 0; y < full_label_height; ++y) {
     for (int x = 0; x < full_label_width; ++x) {
         float &val = box_mask.at<float>(y,x);
@@ -488,7 +470,24 @@ bool ReadBoundingBoxLabelToDatum(
                 val = -1;
             if (has_ellipse_mask[id] && ellipse_mask.at<float>(y,x) != val)
                 val = -1;
+            float valo = labels[0]->at<float>(y, x);
+            if (valo == 0)
+                val = -1;
+            if (val != -1)
+                total_num_pixels++;
         }
+    }
+  }
+
+  if (total_num_pixels != 0) {
+    float reweight_value = 1.0 / total_num_pixels;
+    for (int y = 0; y < full_label_height; ++y) {
+      for (int x = 0; x < full_label_width; ++x) {
+        if (box_mask.at<float>(y,x) == -1)
+            labels[num_total_labels - 1]->at<float>(y, x) = 0.0f;
+        else
+            labels[num_total_labels - 1]->at<float>(y, x) = reweight_value;
+      }
     }
   }
 
@@ -498,7 +497,7 @@ bool ReadBoundingBoxLabelToDatum(
         float adjustment = 0;
         float val = labels[m]->at<float>(y, x);
         if (m == 0 || m > 4) {
-            if (m == 0 && param.use_mask()) {
+            if (m == 0 && param.use_mask() && val == 1.0f) {
                 val = (box_mask.at<float>(y,x)==-1)?0.0f:1.0f;
             }
         } else if (labels[0]->at<float>(y, x) == 0.0) {
