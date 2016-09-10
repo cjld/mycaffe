@@ -1,2 +1,0 @@
-/home/randon/caffe_all/caffe/my/data/full.jpg
-/home/randon/caffe_all/caffe/my/data/full2.jpg
